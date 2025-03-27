@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <title>Box Breathing App</title>
+    <link rel="manifest" href="/manifest.json">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000000;
+            color: #ff6347; /* Warm tomato color */
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            text-align: center;
+            padding: 20px;
+        }
+        h1, h2 {
+            margin: 10px 0;
+        }
+        p {
+            margin: 5px 0;
+        }
+        .buttons {
+            margin: 20px 0;
+        }
+        button {
+            background: #ff4500; /* Warm orange */
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #ff6347;
+        }
+        #time-limit, #phase-duration {
+            padding: 5px;
+            margin: 10px 0;
+            background: #1a1a1a;
+            color: #ff6347;
+            border: 1px solid #ff4500;
+            border-radius: 5px;
+        }
+        .box {
+            width: 80vw;
+            height: 80vw;
+            max-width: 300px;
+            max-height: 300px;
+            position: relative;
+            border: 1px solid #ff4500;
+            margin: 20px auto;
+        }
+        #circle {
+            width: 10vw;
+            height: 10vw;
+            max-width: 30px;
+            max-height: 30px;
+            background: #ff6347;
+            border-radius: 50%;
+            position: absolute;
+            box-shadow: 0 0 10px #ff6347;
+        }
+        #total-time {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 14px;
+            opacity: 0.7;
+        }
+        .exercise h2 {
+            font-size: 24px;
+        }
+        .exercise #phase-timer {
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="homepage" class="container">
+        <h1>Box Breathing App</h1>
+        <p>A simple app to help you relax and sleep better.</p>
+        <label for="time-limit">Set time limit (minutes):</label>
+        <input type="number" id="time-limit" min="1" placeholder="Optional">
+        <label for="phase-duration">Phase duration (seconds): <span id="duration-value">4</span></label>
+        <input type="range" id="phase-duration" min="3" max="6" step="1" value="4">
+        <div class="buttons">
+            <button onclick="setLimit(2)">2 min</button>
+            <button onclick="setLimit(5)">5 min</button>
+            <button onclick="setLimit(10)">10 min</button>
+            <button onclick="startExercise()">Start</button>
+        </div>
+    </div>
+    <div id="exercise" class="container exercise" style="display: none;">
+        <h2 id="phase-name">Inhale</h2>
+        <p id="phase-timer">4</p>
+        <div class="box">
+            <div id="circle"></div>
+        </div>
+        <p id="total-time">Elapsed: 0:00</p>
+        <button onclick="stopExercise()">Stop</button>
+    </div>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/service-worker.js')
+                .then(reg => console.log('Service Worker registered'))
+                .catch(err => console.log('Service Worker not registered', err));
+        }
+
+        let D = 4; // Default phase duration in seconds
+        const phaseNames = ['Inhale', 'Hold', 'Exhale', 'Wait'];
+        const positions = [
+            { left: '0%', top: '90%' },   // Bottom left
+            { left: '0%', top: '0%' },    // Top left
+            { left: '90%', top: '0%' },   // Top right
+            { left: '90%', top: '90%' }   // Bottom right
+        ];
+        let phaseIndex = 0;
+        let phaseTimer = D;
+        let totalTime = 0;
+        let timeLimit = Infinity;
+        let timeLimitReached = false;
+        let intervalId;
+        let isExerciseRunning = false;
+
+        // Update displayed duration value when slider is moved
+        document.getElementById('phase-duration').addEventListener('input', function() {
+            document.getElementById('duration-value').textContent = this.value;
+        });
+
+        function formatTime(seconds) {
+            const min = Math.floor(seconds / 60);
+            const sec = seconds % 60;
+            return `${min}:${sec.toString().padStart(2, '0')}`;
+        }
+
+        function startPhase(index) {
+            const circle = document.getElementById('circle');
+            const startPos = positions[index];
+            const endPos = positions[(index + 1) % 4];
+            document.getElementById('phase-name').textContent = phaseNames[index];
+            circle.style.transition = 'none';
+            circle.style.left = startPos.left;
+            circle.style.top = startPos.top;
+            setTimeout(() => {
+                circle.style.transition = `all ${D}s linear`;
+                circle.style.left = endPos.left;
+                circle.style.top = endPos.top;
+            }, 0);
+        }
+
+        function updateTimers() {
+            if (!isExerciseRunning) return;
+            phaseTimer--;
+            totalTime++;
+            if (phaseTimer <= 0) {
+                phaseTimer = D;
+                phaseIndex = (phaseIndex + 1) % 4;
+                if (timeLimitReached && phaseIndex === 2) { // After exhale
+                    stopExercise();
+                    return;
+                }
+                startPhase(phaseIndex);
+            }
+            if (totalTime >= timeLimit) {
+                timeLimitReached = true;
+            }
+            document.getElementById('phase-timer').textContent = phaseTimer;
+            document.getElementById('total-time').textContent = `Elapsed: ${formatTime(totalTime)}`;
+        }
+
+        function startExercise() {
+            D = parseInt(document.getElementById('phase-duration').value);
+            const limitInput = document.getElementById('time-limit').value;
+            timeLimit = limitInput ? parseInt(limitInput) * 60 : Infinity;
+            document.getElementById('homepage').style.display = 'none';
+            document.getElementById('exercise').style.display = 'block';
+            isExerciseRunning = true;
+            phaseIndex = 0;
+            phaseTimer = D;
+            totalTime = 0;
+            timeLimitReached = false;
+            startPhase(0);
+            intervalId = setInterval(updateTimers, 1000);
+        }
+
+        function stopExercise() {
+            clearInterval(intervalId);
+            document.getElementById('exercise').style.display = 'none';
+            document.getElementById('homepage').style.display = 'block';
+            isExerciseRunning = false;
+        }
+
+        function setLimit(minutes) {
+            document.getElementById('time-limit').value = minutes;
+        }
+    </script>
+</body>
+</html>
